@@ -522,7 +522,9 @@ with tabs[0]:
     )
     
     if uploaded_file is not None:
-        temp_custom_path = ROOT / "dataset" / "custom_uploaded_requests.csv"
+        upload_dir = ROOT / "dataset"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        temp_custom_path = upload_dir / "custom_uploaded_requests.csv"
         temp_custom_path.write_bytes(uploaded_file.getvalue())
         st.session_state["active_requests_csv"] = str(temp_custom_path)
         st.success(f"Loaded custom dataset: **{uploaded_file.name}** ({len(uploaded_file.getvalue()) / 1024:.1f} KB)")
