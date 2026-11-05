@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import re
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import diskcache
 import pandas as pd
@@ -26,6 +29,7 @@ except ImportError:
 MODEL_NAME = "gemini-3.8-flash"
 PARSER_LOGIC_REVISION = "2026-11-04.2"
 _OCR_ENGINE: Any = None
+_GEMINI_AVAILABLE: bool = True
 DEFAULT_PROMPT = (
     "You are a data-extraction agent. Search this file for any of these identifiers: "
     "{{IDENTIFIERS}} Return ONLY valid JSON. No markdown. No explanation. No preamble. "
@@ -911,8 +915,8 @@ def _ocr_image(path: Path, needles: list[str]) -> dict[str, Any]:
 
 
 @tenacity.retry(
-    wait=tenacity.wait_exponential(multiplier=1, min=1, max=20),
-    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+    stop=tenacity.stop_after_attempt(2),
     retry=tenacity.retry_if_exception_type(Exception),
     reraise=True,
 )
@@ -1037,15 +1041,29 @@ def extract_evidence(
                             matches.append({"line": line_number, "text": line, "identifiers_matched": hits})
                     result["records_found"] = matches
             elif file_type == "pdf" or file_type in {"image", "png", "jpg", "jpeg", "webp"}:
-                if api_key:
-                    result = _gemini_extract(path, prompt, str(evidence_id), api_key)
-                elif file_type == "pdf":
-                    from pypdf import PdfReader
+                result = None
+                global _GEMINI_AVAILABLE
+                if api_key and _GEMINI_AVAILABLE:
+                    try:
+                        result = _gemini_extract(path, prompt, str(evidence_id), api_key)
+                    except Exception as exc:
+                        err_msg = f"{type(exc).__name__}: {exc}"
+                        if any(k in err_msg for k in ("ServerNotFoundError", "gaierror", "Unable to find the server", "ConnectionError", "API_KEY", "403", "401")):
+                            _GEMINI_AVAILABLE = False
+                            logger.info("Disabling Gemini for remainder of run: %s", exc)
+                        logger.warning("Gemini extract failed for %s (%s); falling back to local extraction: %s", path, evidence_id, exc)
+                        result = None
+                if result is None:
+                    if file_type == "pdf":
+                        from pypdf import PdfReader
 
-                    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
-                    result = _parse_document_text(extracted, path.name, needles)
-                else:
-                    result = _ocr_image(path, needles)
+                        try:
+                            extracted = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+                            result = _parse_document_text(extracted, path.name, needles)
+                        except Exception:
+                            result = {"records_found": [], "data_flows_found": [], "restore_risks_found": [], "ocr_text": ""}
+                    else:
+                        result = _ocr_image(path, needles)
             else:
                 raise ValueError(f"Unsupported evidence file_type {file_type!r} for {evidence_id!r}")
             cache.set(digest, result)
