@@ -758,7 +758,15 @@ with tabs[2]:
             with col_viewer:
                 sel_row = matched_files[matched_files["file_id"] == selected_fid].iloc[0]
                 target_file_rel = sel_row[path_col]
-                target_file_full = DATASET_DIR / target_file_rel
+                clean_rel = str(target_file_rel).replace("\\", "/").replace("dataset/", "").replace("evidence/", "")
+                candidates = [
+                    DATASET_DIR / target_file_rel,
+                    ROOT / target_file_rel,
+                    ROOT / clean_rel,
+                    DATASET_DIR / clean_rel,
+                    DATASET_DIR / "evidence" / clean_rel,
+                ]
+                target_file_full = next((c for c in candidates if c.exists()), DATASET_DIR / target_file_rel)
 
                 cache_hit = CACHE_DB.exists()
                 memory_badge = '<span class="badge-memory">Saved in Memory (DiskCache)</span>' if cache_hit else ""
