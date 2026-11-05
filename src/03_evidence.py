@@ -15,7 +15,13 @@ import diskcache
 import pandas as pd
 import tenacity
 
-from token_logger import log_tokens
+try:
+    from token_logger import log_tokens
+except ImportError:
+    try:
+        from src.token_logger import log_tokens
+    except ImportError:
+        def log_tokens(*args, **kwargs): pass
 
 MODEL_NAME = "gemini-3.8-flash"
 PARSER_LOGIC_REVISION = "2026-11-04.2"
@@ -959,7 +965,14 @@ def extract_evidence(
         for _, row in evidence_df.iterrows():
             evidence_id = row[file_id_col]
             path_value = Path(str(row[name_col]))
-            path = path_value if path_value.is_absolute() else root / path_value
+            candidates = [
+                path_value if path_value.is_absolute() else root / path_value,
+                Path(str(path_value).replace("evidence/", "")),
+                Path(str(path_value).replace("evidence\\", "")),
+                Path(__file__).parent.parent / path_value,
+                Path(".") / path_value,
+            ]
+            path = next((c for c in candidates if c.exists()), root / path_value)
             file_type = str(row[type_col]).casefold() if type_col is not None else path.suffix.lstrip(".").casefold()
             if file_type == "sql":
                 snapshot_id = row[_find_column(evidence_df, "file_id") or file_id_col]

@@ -36,12 +36,14 @@ def _validate_frame(frame: pd.DataFrame, schema: type[Any], source_name: str) ->
 
 
 def load_data(dataset_dir: str | Path = "dataset") -> dict[str, Any]:
-    """Load source CSVs and SQL snapshots, returning all shared structures.
-
-    Connections are kept open so later steps can query the in-memory database
-    snapshots without reopening files.
-    """
+    """Load source CSVs and SQL snapshots, supporting both dataset/ and root layouts."""
     root = Path(dataset_dir)
+    if not (root / "deletion_requests.csv").exists():
+        if Path("deletion_requests.csv").exists():
+            root = Path(".")
+        elif (Path(__file__).parent.parent / "deletion_requests.csv").exists():
+            root = Path(__file__).parent.parent
+
     requests_df = pd.read_csv(root / "deletion_requests.csv")
     identities_df = pd.read_csv(root / "user_identities.csv")
     audit_log_df = pd.read_csv(root / "user_audit_log.csv")
@@ -86,7 +88,13 @@ def load_data(dataset_dir: str | Path = "dataset") -> dict[str, Any]:
     try:
         for _, row in sql_rows.iterrows():
             relative = Path(str(row[path_col]))
-            path = relative if relative.is_absolute() else root / relative
+            candidates = [
+                root / relative,
+                Path(str(relative).replace("evidence/", "")),
+                Path(str(relative).replace("evidence\\", "")),
+                Path(__file__).parent.parent / relative,
+            ]
+            path = next((c for c in candidates if c.exists()), root / relative)
             connection = sqlite3.connect(":memory:")
             try:
                 script = path.read_text(encoding="utf-8")
