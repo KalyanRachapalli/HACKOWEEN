@@ -92,7 +92,10 @@ def load_data(dataset_dir: str | Path = "dataset") -> dict[str, Any]:
                 root / relative,
                 Path(str(relative).replace("evidence/", "")),
                 Path(str(relative).replace("evidence\\", "")),
+                Path(relative.name),
+                root / relative.name,
                 Path(__file__).parent.parent / relative,
+                Path(__file__).parent.parent / relative.name,
             ]
             path = next((c for c in candidates if c.exists()), root / relative)
             connection = sqlite3.connect(":memory:")

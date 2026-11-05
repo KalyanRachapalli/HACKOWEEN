@@ -978,11 +978,14 @@ def extract_evidence(
             
             candidates = [
                 path_value if path_value.is_absolute() else root / path_value,
+                Path(path_value.name),
+                root / path_value.name,
                 Path(stripped_str),
                 Path(".") / stripped_str,
                 Path("dataset") / stripped_str,
                 Path("evidence") / stripped_str,
                 Path(__file__).parent.parent / stripped_str,
+                Path(__file__).parent.parent / path_value.name,
                 Path(__file__).parent.parent / "dataset" / stripped_str,
                 Path(__file__).parent.parent / "dataset" / "evidence" / stripped_str,
             ]
