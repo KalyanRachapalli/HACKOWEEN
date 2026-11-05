@@ -969,14 +969,28 @@ def extract_evidence(
         for _, row in evidence_df.iterrows():
             evidence_id = row[file_id_col]
             path_value = Path(str(row[name_col]))
+            clean_str = str(path_value).replace("\\", "/")
+            stripped_str = clean_str.replace("dataset/", "").replace("evidence/", "")
+            
             candidates = [
                 path_value if path_value.is_absolute() else root / path_value,
-                Path(str(path_value).replace("evidence/", "")),
-                Path(str(path_value).replace("evidence\\", "")),
-                Path(__file__).parent.parent / path_value,
-                Path(".") / path_value,
+                Path(stripped_str),
+                Path(".") / stripped_str,
+                Path("dataset") / stripped_str,
+                Path("evidence") / stripped_str,
+                Path(__file__).parent.parent / stripped_str,
+                Path(__file__).parent.parent / "dataset" / stripped_str,
+                Path(__file__).parent.parent / "dataset" / "evidence" / stripped_str,
             ]
-            path = next((c for c in candidates if c.exists()), root / path_value)
+            
+            found_path = next((c for c in candidates if c.exists()), None)
+            if found_path is None:
+                # File not present on disk, proceed safely with empty content
+                facts_by_evidence[evidence_id] = {
+                    "records_found": [], "data_flows_found": [], "restore_risks_found": [], "ocr_text": ""
+                }
+                continue
+            path = found_path
             file_type = str(row[type_col]).casefold() if type_col is not None else path.suffix.lstrip(".").casefold()
             if file_type == "sql":
                 snapshot_id = row[_find_column(evidence_df, "file_id") or file_id_col]
