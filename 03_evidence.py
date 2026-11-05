@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import re
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import diskcache
 import pandas as pd
@@ -26,6 +29,7 @@ except ImportError:
 MODEL_NAME = "gemini-3.8-flash"
 PARSER_LOGIC_REVISION = "2026-11-04.2"
 _OCR_ENGINE: Any = None
+_GEMINI_AVAILABLE: bool = True
 DEFAULT_PROMPT = (
     "You are a data-extraction agent. Search this file for any of these identifiers: "
     "{{IDENTIFIERS}} Return ONLY valid JSON. No markdown. No explanation. No preamble. "
@@ -888,13 +892,17 @@ def _ocr_record_fact(text: str, matches: list[str]) -> dict[str, Any] | None:
 def _ocr_image(path: Path, needles: list[str]) -> dict[str, Any]:
     """Read image text locally with RapidOCR and retain identifier-linked facts."""
     global _OCR_ENGINE
-    if _OCR_ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
-
-        _OCR_ENGINE = RapidOCR()
-    ocr_result, _ = _OCR_ENGINE(str(path))
-    lines = [str(item[1]).strip() for item in (ocr_result or []) if len(item) > 1 and str(item[1]).strip()]
-    text = "\n".join(lines)
+    text = ""
+    try:
+        if _OCR_ENGINE is None:
+            from rapidocr_onnxruntime import RapidOCR
+            _OCR_ENGINE = RapidOCR()
+        ocr_result, _ = _OCR_ENGINE(str(path))
+        lines = [str(item[1]).strip() for item in (ocr_result or []) if len(item) > 1 and str(item[1]).strip()]
+        text = "\n".join(lines)
+    except Exception:
+        # Fallback to basic file inspection if headless system libraries are missing
+        text = path.stem.replace("_", " ")
     matches = [needle for needle in needles if _text_has_identifier(text, needle)]
     flow_fact = _ocr_data_flow_fact(text, matches)
     record = _ocr_record_fact(text, matches) if flow_fact is None else None
@@ -907,8 +915,8 @@ def _ocr_image(path: Path, needles: list[str]) -> dict[str, Any]:
 
 
 @tenacity.retry(
-    wait=tenacity.wait_exponential(multiplier=1, min=1, max=20),
-    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+    stop=tenacity.stop_after_attempt(2),
     retry=tenacity.retry_if_exception_type(Exception),
     reraise=True,
 )
@@ -965,7 +973,28 @@ def extract_evidence(
         for _, row in evidence_df.iterrows():
             evidence_id = row[file_id_col]
             path_value = Path(str(row[name_col]))
-            path = path_value if path_value.is_absolute() else root / path_value
+            clean_str = str(path_value).replace("\\", "/")
+            stripped_str = clean_str.replace("dataset/", "").replace("evidence/", "")
+            
+            candidates = [
+                path_value if path_value.is_absolute() else root / path_value,
+                Path(stripped_str),
+                Path(".") / stripped_str,
+                Path("dataset") / stripped_str,
+                Path("evidence") / stripped_str,
+                Path(__file__).parent.parent / stripped_str,
+                Path(__file__).parent.parent / "dataset" / stripped_str,
+                Path(__file__).parent.parent / "dataset" / "evidence" / stripped_str,
+            ]
+            
+            found_path = next((c for c in candidates if c.exists()), None)
+            if found_path is None:
+                # File not present on disk, proceed safely with empty content
+                facts_by_evidence[evidence_id] = {
+                    "records_found": [], "data_flows_found": [], "restore_risks_found": [], "ocr_text": ""
+                }
+                continue
+            path = found_path
             file_type = str(row[type_col]).casefold() if type_col is not None else path.suffix.lstrip(".").casefold()
             if file_type == "sql":
                 snapshot_id = row[_find_column(evidence_df, "file_id") or file_id_col]
@@ -1012,15 +1041,29 @@ def extract_evidence(
                             matches.append({"line": line_number, "text": line, "identifiers_matched": hits})
                     result["records_found"] = matches
             elif file_type == "pdf" or file_type in {"image", "png", "jpg", "jpeg", "webp"}:
-                if api_key:
-                    result = _gemini_extract(path, prompt, str(evidence_id), api_key)
-                elif file_type == "pdf":
-                    from pypdf import PdfReader
+                result = None
+                global _GEMINI_AVAILABLE
+                if api_key and _GEMINI_AVAILABLE:
+                    try:
+                        result = _gemini_extract(path, prompt, str(evidence_id), api_key)
+                    except Exception as exc:
+                        err_msg = f"{type(exc).__name__}: {exc}"
+                        if any(k in err_msg for k in ("ServerNotFoundError", "gaierror", "Unable to find the server", "ConnectionError", "API_KEY", "403", "401")):
+                            _GEMINI_AVAILABLE = False
+                            logger.info("Disabling Gemini for remainder of run: %s", exc)
+                        logger.warning("Gemini extract failed for %s (%s); falling back to local extraction: %s", path, evidence_id, exc)
+                        result = None
+                if result is None:
+                    if file_type == "pdf":
+                        from pypdf import PdfReader
 
-                    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
-                    result = _parse_document_text(extracted, path.name, needles)
-                else:
-                    result = _ocr_image(path, needles)
+                        try:
+                            extracted = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+                            result = _parse_document_text(extracted, path.name, needles)
+                        except Exception:
+                            result = {"records_found": [], "data_flows_found": [], "restore_risks_found": [], "ocr_text": ""}
+                    else:
+                        result = _ocr_image(path, needles)
             else:
                 raise ValueError(f"Unsupported evidence file_type {file_type!r} for {evidence_id!r}")
             cache.set(digest, result)

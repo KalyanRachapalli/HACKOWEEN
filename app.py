@@ -648,7 +648,7 @@ with tabs[1]:
         st.caption(f"Displaying **{len(table_rows)}** matching customer requests.")
 
         if table_rows:
-            # Summary Table view
+            # Summary Table view (displays all cases)
             view_df = pd.DataFrame([
                 {
                     "Request ID": r["case_id"],
@@ -657,7 +657,7 @@ with tabs[1]:
                     "Status": r["raw_status"],
                     "Action Steps": r["step_count"],
                 }
-                for r in table_rows[:150]
+                for r in table_rows
             ])
             st.dataframe(view_df, use_container_width=True, hide_index=True)
 
