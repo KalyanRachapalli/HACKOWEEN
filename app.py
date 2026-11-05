@@ -558,6 +558,7 @@ with tabs[0]:
             stdout_output, _ = proc.communicate()
 
             if proc.returncode == 0:
+                load_csv_safely.clear()
                 progress_bar.progress(100, text="Validation complete")
                 status_box.update(label="Audit completed successfully. Output verified.", state="complete")
                 st.session_state["audit_executed"] = True
