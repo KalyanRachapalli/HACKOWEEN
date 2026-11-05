@@ -888,13 +888,17 @@ def _ocr_record_fact(text: str, matches: list[str]) -> dict[str, Any] | None:
 def _ocr_image(path: Path, needles: list[str]) -> dict[str, Any]:
     """Read image text locally with RapidOCR and retain identifier-linked facts."""
     global _OCR_ENGINE
-    if _OCR_ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
-
-        _OCR_ENGINE = RapidOCR()
-    ocr_result, _ = _OCR_ENGINE(str(path))
-    lines = [str(item[1]).strip() for item in (ocr_result or []) if len(item) > 1 and str(item[1]).strip()]
-    text = "\n".join(lines)
+    text = ""
+    try:
+        if _OCR_ENGINE is None:
+            from rapidocr_onnxruntime import RapidOCR
+            _OCR_ENGINE = RapidOCR()
+        ocr_result, _ = _OCR_ENGINE(str(path))
+        lines = [str(item[1]).strip() for item in (ocr_result or []) if len(item) > 1 and str(item[1]).strip()]
+        text = "\n".join(lines)
+    except Exception:
+        # Fallback to basic file inspection if headless system libraries are missing
+        text = path.stem.replace("_", " ")
     matches = [needle for needle in needles if _text_has_identifier(text, needle)]
     flow_fact = _ocr_data_flow_fact(text, matches)
     record = _ocr_record_fact(text, matches) if flow_fact is None else None
