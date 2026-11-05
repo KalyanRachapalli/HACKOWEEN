@@ -594,7 +594,13 @@ with tabs[1]:
     if not st.session_state["audit_executed"] or output_df.empty:
         st.info("Audit has not been run yet. Click 'RUN FULL AUDIT ENGINE' on the Summary tab to inspect cases.")
     else:
-        req_lookup = requests_df.set_index("case_id").to_dict(orient="index") if not requests_df.empty else {}
+        # Load metadata from uploaded requests CSV if active, otherwise system requests CSV
+        active_requests_path = st.session_state.get("active_requests_csv", REQUESTS_CSV)
+        active_req_df = load_csv_safely(active_requests_path)
+        if active_req_df.empty:
+            active_req_df = requests_df
+            
+        req_lookup = active_req_df.set_index("case_id").to_dict(orient="index") if not active_req_df.empty else {}
 
         # Search and Filter Controls
         f1, f2 = st.columns([3, 1])
