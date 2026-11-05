@@ -33,13 +33,26 @@ DATASET_DIR = ROOT / "dataset"
 EVIDENCE_DIR = DATASET_DIR / "evidence"
 MAIN_SCRIPT = ROOT / "src" / "main.py"
 VALIDATOR_SCRIPT = ROOT / "src" / "06_validator.py"
-REQUESTS_CSV = DATASET_DIR / "deletion_requests.csv"
-IDENTITIES_CSV = DATASET_DIR / "user_identities.csv"
-AUDIT_LOG_CSV = DATASET_DIR / "user_audit_log.csv"
-RULES_CSV = DATASET_DIR / "deletion_rules.csv"
-EVIDENCE_CSV = DATASET_DIR / "evidence_files.csv"
-SAMPLE_REQUESTS = DATASET_DIR / "sample_deletion_requests.csv"
-SAMPLE_OUTPUT = DATASET_DIR / "sample_output.csv"
+# Dynamic path resolution: find datasets in dataset/ or root directory
+def resolve_file_path(filename: str) -> pathlib.Path:
+    candidates = [
+        ROOT / "dataset" / filename,
+        ROOT / filename,
+        ROOT / "dataset" / "evidence" / filename,
+        ROOT / "evidence" / filename,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return ROOT / "dataset" / filename
+
+REQUESTS_CSV = resolve_file_path("deletion_requests.csv")
+IDENTITIES_CSV = resolve_file_path("user_identities.csv")
+AUDIT_LOG_CSV = resolve_file_path("user_audit_log.csv")
+RULES_CSV = resolve_file_path("deletion_rules.csv")
+EVIDENCE_CSV = resolve_file_path("evidence_files.csv")
+SAMPLE_REQUESTS = resolve_file_path("sample_deletion_requests.csv")
+SAMPLE_OUTPUT = resolve_file_path("sample_output.csv")
 RUN_HISTORY = ROOT / "run_history.json"
 HISTORY_DIR = ROOT / "output_history"
 TOKEN_LOG = ROOT / "token_log.jsonl"
