@@ -1,0 +1,22 @@
+# Secrets & API Keys
+.env
+.env.local
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Evidence caches & temporary artifacts
+cache/
+output_history/
+*.log
+token_log.jsonl
+sample_agent_output.csv
