@@ -769,13 +769,15 @@ with tabs[2]:
                 target_file_rel = sel_row[path_col]
                 clean_rel = str(target_file_rel).replace("\\", "/").replace("dataset/", "").replace("evidence/", "")
                 candidates = [
+                    ROOT / sel_row["basename"],
                     DATASET_DIR / target_file_rel,
                     ROOT / target_file_rel,
                     ROOT / clean_rel,
                     DATASET_DIR / clean_rel,
                     DATASET_DIR / "evidence" / clean_rel,
+                    ROOT / "evidence" / clean_rel,
                 ]
-                target_file_full = next((c for c in candidates if c.exists()), DATASET_DIR / target_file_rel)
+                target_file_full = next((c for c in candidates if c.exists()), ROOT / sel_row["basename"])
 
                 cache_hit = CACHE_DB.exists()
                 memory_badge = '<span class="badge-memory">Saved in Memory (DiskCache)</span>' if cache_hit else ""
